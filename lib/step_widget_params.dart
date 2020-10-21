@@ -13,6 +13,9 @@ class WidgetParams {
 /// The data passed in when the system calls [IntroStep.widgetBuilder] when the guide page is generated
 ///
 class StepWidgetParams {
+  /// Keys to the widgets of each step
+  final List<GlobalKey> keys;
+
   /// Return to the previous guide page method, or null if there is none
   final VoidCallback onPrev;
 
@@ -38,6 +41,7 @@ class StepWidgetParams {
   final Offset offset;
 
   StepWidgetParams({
+    this.keys,
     this.onPrev,
     this.onNext,
     this.onFinish,

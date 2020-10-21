@@ -225,6 +225,7 @@ class Intro {
     Size widgetSize = Size(_widgetWidth, _widgetHeight);
 
     _stepWidget = widgetBuilder(StepWidgetParams(
+      keys: _globalKeys,
       screenSize: screenSize,
       size: widgetSize,
       onNext: _currentStepIndex == stepCount - 1
