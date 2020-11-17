@@ -1,13 +1,14 @@
 library flutter_intro;
 
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_intro/delay_rendered_widget.dart';
-import 'package:flutter_intro/step_widget_params.dart';
 
-export 'package:flutter_intro/step_widget_builder.dart';
-export 'package:flutter_intro/step_widget_params.dart';
+part 'delay_rendered_widget.dart';
+part 'step_widget_builder.dart';
+part 'step_widget_params.dart';
+part 'throttling.dart';
 
 /// Flutter Intro main class
 ///
@@ -46,6 +47,11 @@ class Intro {
   List<GlobalKey> _globalKeys = [];
   final Color _maskColor = Colors.black.withOpacity(.6);
   final Duration _animationDuration = Duration(milliseconds: 300);
+  final _th = _Throttling(duration: Duration(milliseconds: 500));
+  Size _lastScreenSize;
+
+  /// get current step page index
+  int get currentStepIndex => _currentStepIndex;
 
   /// The method of generating the content of the guide page,
   /// which will be called internally by [Intro] when the guide page appears
@@ -78,6 +84,10 @@ class Intro {
   List<GlobalKey> get keys => _globalKeys;
 
   /// Set the configuration of the specified number of steps
+  ///
+  /// [stepIndex] Which step of configuration needs to be modified
+  /// [padding] Padding setting
+  /// [borderRadius] BorderRadius setting
   void setStepConfig(
     int stepIndex, {
     EdgeInsets padding,
@@ -91,6 +101,10 @@ class Intro {
   }
 
   /// Set the configuration of multiple steps
+  ///
+  /// [stepsIndex] Which steps of configuration needs to be modified
+  /// [padding] Padding setting
+  /// [borderRadius] BorderRadius setting
   void setStepsConfig(
     List<int> stepsIndex, {
     EdgeInsets padding,
@@ -123,30 +137,35 @@ class Intro {
   }
 
   Widget _maskBuilder({
-    @required double width,
-    @required double height,
+    double width,
+    double height,
     BlendMode backgroundBlendMode,
     @required double left,
     @required double top,
+    double bottom,
+    double right,
     BorderRadiusGeometry borderRadiusGeometry,
     Widget child,
   }) {
+    final decoration = BoxDecoration(
+      color: Colors.white,
+      backgroundBlendMode: backgroundBlendMode,
+      borderRadius: borderRadiusGeometry,
+    );
     return AnimatedPositioned(
       duration: _animationDuration,
       child: AnimatedContainer(
         padding: padding,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          backgroundBlendMode: backgroundBlendMode,
-          borderRadius: borderRadiusGeometry,
-        ),
+        decoration: decoration,
         width: width,
         height: height,
-        duration: _animationDuration,
         child: child,
+        duration: _animationDuration,
       ),
       left: left,
       top: top,
+      bottom: bottom,
+      right: right,
     );
   }
 
@@ -154,10 +173,20 @@ class Intro {
     BuildContext context,
     GlobalKey globalKey,
   ) {
-    Size screenSize = MediaQuery.of(context).size;
     _overlayEntry = new OverlayEntry(
       builder: (BuildContext context) {
-        return DelayRenderedWidget(
+        Size screenSize = MediaQuery.of(context).size;
+
+        if (screenSize.width != _lastScreenSize.width &&
+            screenSize.height != _lastScreenSize.height) {
+          _lastScreenSize = screenSize;
+          _th.throttle(() {
+            _createStepWidget(context);
+            _overlayEntry.markNeedsBuild();
+          });
+        }
+
+        return _DelayRenderedWidget(
           removed: _removed,
           childPersist: true,
           duration: _animationDuration,
@@ -173,11 +202,11 @@ class Intro {
                   child: Stack(
                     children: [
                       _maskBuilder(
-                        width: screenSize.width,
-                        height: screenSize.height,
                         backgroundBlendMode: BlendMode.dstOut,
                         left: 0,
                         top: 0,
+                        right: 0,
+                        bottom: 0,
                       ),
                       _maskBuilder(
                         width: _widgetWidth,
@@ -191,7 +220,7 @@ class Intro {
                     ],
                   ),
                 ),
-                DelayRenderedWidget(
+                _DelayRenderedWidget(
                   child: _stepWidget,
                 ),
               ],
@@ -206,17 +235,25 @@ class Intro {
   void _onNext(BuildContext context) {
     _currentStepIndex++;
     if (_currentStepIndex < stepCount) {
-      _createStepWidget(context);
-      _overlayEntry.markNeedsBuild();
+      _renderStep(context);
     }
   }
 
   void _onPrev(BuildContext context) {
     _currentStepIndex--;
     if (_currentStepIndex >= 0) {
-      _createStepWidget(context);
-      _overlayEntry.markNeedsBuild();
+      _renderStep(context);
     }
+  }
+
+  void _onFinish() {
+    if (_overlayEntry == null) return;
+    _removed = true;
+    _overlayEntry.markNeedsBuild();
+    Timer(_animationDuration, () {
+      _overlayEntry.remove();
+      _overlayEntry = null;
+    });
   }
 
   void _createStepWidget(BuildContext context) {
@@ -241,20 +278,20 @@ class Intro {
       offset: _widgetOffset,
       currentStepIndex: _currentStepIndex,
       stepCount: stepCount,
-      onFinish: () {
-        _removed = true;
-        _overlayEntry.markNeedsBuild();
-        Timer(_animationDuration, () {
-          _overlayEntry.remove();
-        });
-      },
+      onFinish: _onFinish,
     ));
+  }
+
+  void _renderStep(BuildContext context) {
+    _createStepWidget(context);
+    _overlayEntry.markNeedsBuild();
   }
 
   /// Trigger the start method of the guided operation
   ///
   /// [context] Current environment [BuildContext]
   void start(BuildContext context) {
+    _lastScreenSize = MediaQuery.of(context).size;
     _removed = false;
     _currentStepIndex = 0;
     _createStepWidget(context);
@@ -262,5 +299,10 @@ class Intro {
       context,
       _globalKeys[_currentStepIndex],
     );
+  }
+
+  /// Destroy the guide page and release all resources
+  void dispose() {
+    _onFinish();
   }
 }
